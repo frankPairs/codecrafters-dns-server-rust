@@ -1,8 +1,17 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use std::net::UdpSocket;
+use std::{fmt::format, net::UdpSocket};
+use thiserror::Error;
 
 /// Conventionally, DNS packets are sent using UDP transport and are limited to 512 bytes
 const DNS_PACKET_SIZE: usize = 512;
+
+#[derive(Debug, Error)]
+enum DnsMessageError {
+    #[error("InvalidQuestionType Error: {0}")]
+    InvalidQuestionType(String),
+    #[error("InvalidQuestionClass Error: {0}")]
+    InvalidQuestionClass(String),
+}
 
 /// The header contains information about the query/response.
 /// It is 12 bytes long, and integers are encoded in big-endian format.
@@ -130,10 +139,167 @@ impl Into<u8> for DnsResponseCode {
         }
     }
 }
+/// The question section contains a list of questions (usually just 1) that the sender wants to ask the receiver. This section is present in both query and reply packets.
+#[derive(Debug)]
+struct DnsQuestion {
+    /// A domain name, represented as a sequence of "labels" (more on this below)
+    name: String,
+    kind: DnsQuestionKind,
+    class: DnsQuestionClass,
+}
+/// QTYPE fields appear in the question part of a query.  QTYPES are a
+/// superset of TYPEs, hence all TYPEs are valid QTYPEs.
+#[derive(Debug, Clone, Copy)]
+enum DnsQuestionKind {
+    /// 1 a host address
+    A,
+    /// 2 an authoritative name server
+    NS,
+    /// 3 a mail destination (Obsolete - use MX)
+    MD,
+    /// 4 a mail forwarder (Obsolete - use MX)
+    MF,
+    /// 5 the canonical name for an alias
+    CNAME,
+    /// 6 marks the start of a zone of authority
+    SOA,
+    /// 7 a mailbox domain name (EXPERIMENTAL)
+    MB,
+    /// 8 a mail group member (EXPERIMENTAL)
+    MG,
+    /// 9 a mail rename domain name (EXPERIMENTAL)
+    MR,
+    /// 10 a null RR (EXPERIMENTAL)
+    NULL,
+    /// 11 a well known service description
+    WKS,
+    /// 12 a domain name pointer
+    PTR,
+    /// 13 host information
+    HINFO,
+    /// 14 mailbox or mail list information
+    MINFO,
+    /// 15 mail exchange
+    MX,
+    /// 16 text strings
+    TXT,
+    /// 252 A request for a transfer of an entire zone
+    AXFR,
+    /// 253 A request for mailbox-related records (MB, MG or MR)
+    MAILB,
+    /// 254 A request for mail agent RRs (Obsolete - see MX)
+    MAILA,
+    /// 255 A request for all records
+    ALL,
+}
+
+impl Into<u16> for DnsQuestionKind {
+    fn into(self) -> u16 {
+        match self {
+            DnsQuestionKind::A => 1,
+            DnsQuestionKind::NS => 2,
+            DnsQuestionKind::MD => 3,
+            DnsQuestionKind::MF => 4,
+            DnsQuestionKind::CNAME => 5,
+            DnsQuestionKind::SOA => 6,
+            DnsQuestionKind::MB => 7,
+            DnsQuestionKind::MG => 8,
+            DnsQuestionKind::MR => 9,
+            DnsQuestionKind::NULL => 10,
+            DnsQuestionKind::WKS => 11,
+            DnsQuestionKind::PTR => 12,
+            DnsQuestionKind::HINFO => 13,
+            DnsQuestionKind::MINFO => 14,
+            DnsQuestionKind::MX => 15,
+            DnsQuestionKind::TXT => 16,
+            DnsQuestionKind::AXFR => 252,
+            DnsQuestionKind::MAILB => 253,
+            DnsQuestionKind::MAILA => 254,
+            DnsQuestionKind::ALL => 255,
+        }
+    }
+}
+
+impl TryFrom<u16> for DnsQuestionKind {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DnsQuestionKind::A),
+            2 => Ok(DnsQuestionKind::NS),
+            3 => Ok(DnsQuestionKind::MD),
+            4 => Ok(DnsQuestionKind::MF),
+            5 => Ok(DnsQuestionKind::CNAME),
+            6 => Ok(DnsQuestionKind::SOA),
+            7 => Ok(DnsQuestionKind::MB),
+            8 => Ok(DnsQuestionKind::MG),
+            9 => Ok(DnsQuestionKind::MR),
+            10 => Ok(DnsQuestionKind::NULL),
+            11 => Ok(DnsQuestionKind::WKS),
+            12 => Ok(DnsQuestionKind::PTR),
+            13 => Ok(DnsQuestionKind::HINFO),
+            14 => Ok(DnsQuestionKind::MINFO),
+            15 => Ok(DnsQuestionKind::MX),
+            16 => Ok(DnsQuestionKind::TXT),
+            252 => Ok(DnsQuestionKind::AXFR),
+            253 => Ok(DnsQuestionKind::MAILB),
+            254 => Ok(DnsQuestionKind::MAILA),
+            255 => Ok(DnsQuestionKind::ALL),
+            num => Err(DnsMessageError::InvalidQuestionType(format!(
+                "{} is not a valid question type",
+                num
+            ))),
+        }
+    }
+}
+
+/// QCLASS fields appear in the question section of a query.  QCLASS values
+/// are a superset of CLASS values; every CLASS is a valid QCLASS.  In
+/// addition to CLASS values, the following QCLASSes are defined:
+#[derive(Debug, Clone, Copy)]
+enum DnsQuestionClass {
+    /// 1 the Internet
+    IN,
+    /// 2 the CSNET class (Obsolete - used only for examples in some obsolete RFCs)
+    CS,
+    /// 3 the CHAOS class
+    CH,
+    /// 4 Hesiod [Dyer 87]
+    HS,
+}
+
+impl Into<u16> for DnsQuestionClass {
+    fn into(self) -> u16 {
+        match self {
+            DnsQuestionClass::IN => 1,
+            DnsQuestionClass::CS => 2,
+            DnsQuestionClass::CH => 3,
+            DnsQuestionClass::HS => 4,
+        }
+    }
+}
+impl TryFrom<u16> for DnsQuestionClass {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DnsQuestionClass::IN),
+            2 => Ok(DnsQuestionClass::CS),
+            3 => Ok(DnsQuestionClass::CH),
+            4 => Ok(DnsQuestionClass::HS),
+            num => Err(DnsMessageError::InvalidQuestionClass(format!(
+                "{} is not a valid question class",
+                num
+            ))),
+        }
+    }
+}
+
 /// All communications in the DNS protocol are carried in a single format called a "message". Each message consists of 5 sections: header, question, answer, authority, and an additional space.
 #[derive(Debug)]
 struct DnsMessage {
     header: DnsHeader,
+    question: DnsQuestion,
 }
 
 struct DnsMessageEncoder;
@@ -144,6 +310,9 @@ impl DnsMessageEncoder {
 
         let header = DnsHeaderEncoder::encode(&message.header);
         buf.put(header);
+
+        let question = DnsQuestionEncoder::encode(&message.question);
+        buf.put(question);
 
         Bytes::from(buf)
     }
@@ -212,6 +381,33 @@ impl DnsHeaderEncoder {
     }
 }
 
+struct DnsQuestionEncoder;
+
+impl DnsQuestionEncoder {
+    fn encode(question: &DnsQuestion) -> Bytes {
+        let mut buf = BytesMut::new();
+        let mut encoded_name = BytesMut::new();
+        let question_parts = question.name.split(".");
+
+        for part in question_parts {
+            let label_length: u8 = part.len() as u8;
+
+            encoded_name.put_u8(label_length);
+            encoded_name.put(part.as_bytes());
+        }
+
+        encoded_name.put_u8(0);
+
+        buf.put(encoded_name);
+
+        buf.put_u16(question.kind.into());
+
+        buf.put_u16(question.class.into());
+
+        Bytes::from(buf)
+    }
+}
+
 fn main() {
     let udp_socket = UdpSocket::bind("127.0.0.1:2053").expect("Failed to bind to address");
     let mut buf = [0; DNS_PACKET_SIZE];
@@ -230,10 +426,15 @@ fn main() {
                         recursion_available: false,
                         reserve: 0,
                         code: DnsResponseCode::NoErrorCondition,
-                        question_count: 0,
+                        question_count: 1,
                         answer_record_count: 0,
                         auth_record_count: 0,
                         additional_record_count: 0,
+                    },
+                    question: DnsQuestion {
+                        name: "codecrafters.io".to_string(),
+                        kind: DnsQuestionKind::A,
+                        class: DnsQuestionClass::IN,
                     },
                 };
                 println!("Received {} bytes from {}", size, source);
