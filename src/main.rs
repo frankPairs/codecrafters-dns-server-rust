@@ -6,7 +6,7 @@ use crate::message::{
     answer::DnsAnswer,
     constants::DNS_MESSAGE_PACKET_SIZE,
     header::{DnsHeader, DnsOperationCode, DnsResponseCode},
-    message::{DnsMessage, DnsMessageEncoder},
+    message::{DnsMessage, DnsMessageDecoder, DnsMessageEncoder},
     question::{DnsQuestion, DnsQuestionClass, DnsQuestionType},
     types::{DnsClass, DnsType},
 };
@@ -17,18 +17,27 @@ fn main() {
 
     loop {
         match udp_socket.recv_from(&mut buf) {
-            Ok((size, source)) => {
-                let message = DnsMessage {
+            Ok((_, source)) => {
+                let request = DnsMessageDecoder::decode(&buf).unwrap();
+
+                let response_message = DnsMessage {
                     header: DnsHeader {
-                        id: 1234,
+                        id: request.header.id,
                         query_indicator: true,
-                        operation_code: DnsOperationCode::StandardQuery,
+                        operation_code: request.header.operation_code,
                         auth_answer: false,
                         truncation: false,
-                        recursion_desired: false,
+                        recursion_desired: request.header.recursion_desired,
                         recursion_available: false,
                         reserve: 0,
-                        code: DnsResponseCode::NoErrorCondition,
+                        code: if matches!(
+                            request.header.operation_code,
+                            DnsOperationCode::StandardQuery
+                        ) {
+                            DnsResponseCode::NoErrorCondition
+                        } else {
+                            DnsResponseCode::NotImplemented
+                        },
                         question_count: 1,
                         answer_record_count: 1,
                         auth_record_count: 0,
@@ -48,9 +57,8 @@ fn main() {
                         data: "8.8.8.8".to_string(),
                     },
                 };
-                println!("Received {} bytes from {}", size, source);
 
-                let response = DnsMessageEncoder::encode(&message);
+                let response = DnsMessageEncoder::encode(&response_message);
 
                 udp_socket
                     .send_to(&response, source)

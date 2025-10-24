@@ -1,6 +1,13 @@
-use bytes::{BufMut, Bytes, BytesMut};
+use std::u16;
+
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+
+use crate::message::error::DnsMessageError;
 
 use super::constants::DNS_MESSAGE_PACKET_SIZE;
+
+// DNS header section is 12 bytes lenght
+const DNS_HEADER_LEN: usize = 12;
 
 /// The header contains information about the query/response.
 /// It is 12 bytes long, and integers are encoded in big-endian format.
@@ -62,7 +69,7 @@ pub enum DnsOperationCode {
     StandardQuery,
     InverseQuery,
     ServerStatusRequest,
-    Reserve,
+    Reserve(u8),
 }
 
 impl Into<u8> for DnsOperationCode {
@@ -71,7 +78,24 @@ impl Into<u8> for DnsOperationCode {
             DnsOperationCode::StandardQuery => 0,
             DnsOperationCode::InverseQuery => 1,
             DnsOperationCode::ServerStatusRequest => 2,
-            DnsOperationCode::Reserve => 15,
+            DnsOperationCode::Reserve(num) => num,
+        }
+    }
+}
+
+impl TryFrom<u8> for DnsOperationCode {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(DnsOperationCode::StandardQuery),
+            1 => Ok(DnsOperationCode::InverseQuery),
+            2 => Ok(DnsOperationCode::ServerStatusRequest),
+            3..=15 => Ok(DnsOperationCode::Reserve(value)),
+            num => Err(DnsMessageError::InvalidOperationCode(format!(
+                "{} is not a valid operation code",
+                num
+            ))),
         }
     }
 }
@@ -113,7 +137,7 @@ pub enum DnsResponseCode {
     NameError,
     NotImplemented,
     Refused,
-    Reserved,
+    Reserved(u8),
 }
 
 impl Into<u8> for DnsResponseCode {
@@ -125,11 +149,30 @@ impl Into<u8> for DnsResponseCode {
             DnsResponseCode::NameError => 3,
             DnsResponseCode::NotImplemented => 4,
             DnsResponseCode::Refused => 5,
-            DnsResponseCode::Reserved => 15,
+            DnsResponseCode::Reserved(num) => num,
         }
     }
 }
 
+impl TryFrom<u8> for DnsResponseCode {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(DnsResponseCode::NoErrorCondition),
+            1 => Ok(DnsResponseCode::FormatError),
+            2 => Ok(DnsResponseCode::ServerFailure),
+            3 => Ok(DnsResponseCode::NameError),
+            4 => Ok(DnsResponseCode::NotImplemented),
+            5 => Ok(DnsResponseCode::Refused),
+            6..=15 => Ok(DnsResponseCode::Reserved(value)),
+            num => Err(DnsMessageError::InvalidResponseCode(format!(
+                "{} is not a valid response code",
+                num
+            ))),
+        }
+    }
+}
 pub struct DnsHeaderEncoder;
 
 impl DnsHeaderEncoder {
@@ -190,5 +233,62 @@ impl DnsHeaderEncoder {
         buf.put_u16(header.additional_record_count);
 
         Bytes::from(buf)
+    }
+}
+
+pub struct DnsHeaderDecoder;
+
+impl DnsHeaderDecoder {
+    pub fn decode(data: &[u8]) -> Result<DnsHeader, DnsMessageError> {
+        if data.len() != DNS_HEADER_LEN {
+            return Err(DnsMessageError::DecodeHeader(
+                "Invalid header section size".to_string(),
+            ));
+        }
+
+        let mut buf = Bytes::copy_from_slice(data);
+
+        let id = buf.get_u16();
+
+        let third_byte = buf.get_u8();
+
+        let query_indicator = third_byte & 0b0000_0001 > 0;
+
+        let operation_code_mask = (third_byte & 0b0111_1000) >> 3;
+
+        println!("operation_code_mask = {:#010b}", operation_code_mask);
+        let operation_code = DnsOperationCode::try_from(operation_code_mask)?;
+
+        let auth_answer = third_byte & 0b0000_0100 > 0;
+        let truncation = third_byte & 0b0000_0010 > 0;
+        let recursion_desired = third_byte & 0b0000_0001 > 0;
+
+        let fourth_byte = buf.get_u8();
+
+        let recursion_available = fourth_byte & 0b1000_0000 > 0;
+
+        let code_mask = fourth_byte >> 4;
+        let code = DnsResponseCode::try_from(code_mask)?;
+
+        let question_count = buf.get_u16();
+        let answer_record_count = buf.get_u16();
+        let auth_record_count = buf.get_u16();
+        let additional_record_count = buf.get_u16();
+
+        Ok(DnsHeader {
+            id,
+            query_indicator,
+            operation_code,
+            auth_answer,
+            truncation,
+            recursion_desired,
+            recursion_available,
+            reserve: 0,
+            code,
+            question_count,
+            answer_record_count,
+            auth_record_count,
+            additional_record_count,
+        })
     }
 }
