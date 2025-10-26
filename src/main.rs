@@ -44,12 +44,12 @@ fn main() {
                         additional_record_count: 0,
                     },
                     question: DnsQuestion {
-                        name: "codecrafters.io".to_string(),
+                        name: request.question.name.clone(),
                         kind: DnsQuestionType::DnsType(DnsType::A),
                         class: DnsQuestionClass::DnsClass(DnsClass::IN),
                     },
                     answer: DnsAnswer {
-                        name: "codecrafters.io".to_string(),
+                        name: request.question.name.clone(),
                         kind: DnsType::A,
                         class: DnsClass::IN,
                         ttl: 60,

@@ -1,5 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
+use crate::message::question::DnsQuestionDecoder;
+
 use super::{
     answer::{DnsAnswer, DnsAnswerEncoder},
     constants::DNS_MESSAGE_PACKET_SIZE,
@@ -39,24 +41,21 @@ impl DnsMessageEncoder {
 pub struct DnsMessageDecoder;
 
 impl DnsMessageDecoder {
-    pub fn decode(data: &[u8; DNS_MESSAGE_PACKET_SIZE]) -> Result<DnsMessage, DnsMessageError> {
-        let buf = Bytes::copy_from_slice(data);
+    pub fn decode(buf: &[u8; DNS_MESSAGE_PACKET_SIZE]) -> Result<DnsMessage, DnsMessageError> {
+        let mut buf = Bytes::copy_from_slice(buf);
 
-        let header_data = buf.get(0..12).ok_or(DnsMessageError::DecodeHeader(
-            "Message does not contain header data".to_string(),
-        ))?;
-
-        let header = DnsHeaderDecoder::decode(&header_data)?;
+        let header = DnsHeaderDecoder::decode(&mut buf)?;
+        let question = DnsQuestionDecoder::decode(&mut buf)?;
 
         Ok(DnsMessage {
             header,
             question: DnsQuestion {
-                name: "codecrafters.io".to_string(),
-                kind: DnsQuestionType::ALL,
-                class: DnsQuestionClass::ALL,
+                name: question.name.clone(),
+                kind: DnsQuestionType::DnsType(DnsType::A),
+                class: DnsQuestionClass::DnsClass(DnsClass::IN),
             },
             answer: DnsAnswer {
-                name: "codecrafters.io".to_string(),
+                name: question.name.clone(),
                 kind: DnsType::A,
                 class: DnsClass::IN,
                 ttl: 60,

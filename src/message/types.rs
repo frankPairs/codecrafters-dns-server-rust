@@ -60,6 +60,35 @@ impl Into<u16> for DnsType {
     }
 }
 
+impl TryFrom<u16> for DnsType {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DnsType::A),
+            2 => Ok(DnsType::NS),
+            3 => Ok(DnsType::MD),
+            4 => Ok(DnsType::MF),
+            5 => Ok(DnsType::CNAME),
+            6 => Ok(DnsType::SOA),
+            7 => Ok(DnsType::MB),
+            8 => Ok(DnsType::MG),
+            9 => Ok(DnsType::MR),
+            10 => Ok(DnsType::NULL),
+            11 => Ok(DnsType::WKS),
+            12 => Ok(DnsType::PTR),
+            13 => Ok(DnsType::HINFO),
+            14 => Ok(DnsType::MINFO),
+            15 => Ok(DnsType::MX),
+            16 => Ok(DnsType::TXT),
+            num => Err(DnsMessageError::InvalidDnsType(format!(
+                "{} is not a valid DNS type",
+                num
+            ))),
+        }
+    }
+}
+
 /// CLASS fields appear in resource records.
 #[derive(Debug, Clone, Copy)]
 pub enum DnsClass {
@@ -80,6 +109,23 @@ impl Into<u16> for DnsClass {
             DnsClass::CS => 2,
             DnsClass::CH => 3,
             DnsClass::HS => 4,
+        }
+    }
+}
+
+impl TryFrom<u16> for DnsClass {
+    type Error = DnsMessageError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DnsClass::IN),
+            2 => Ok(DnsClass::CS),
+            3 => Ok(DnsClass::CH),
+            4 => Ok(DnsClass::HS),
+            num => Err(DnsMessageError::InvalidDnsClass(format!(
+                "{} is not a valid DNS class",
+                num
+            ))),
         }
     }
 }

@@ -239,14 +239,8 @@ impl DnsHeaderEncoder {
 pub struct DnsHeaderDecoder;
 
 impl DnsHeaderDecoder {
-    pub fn decode(data: &[u8]) -> Result<DnsHeader, DnsMessageError> {
-        if data.len() != DNS_HEADER_LEN {
-            return Err(DnsMessageError::DecodeHeader(
-                "Invalid header section size".to_string(),
-            ));
-        }
-
-        let mut buf = Bytes::copy_from_slice(data);
+    pub fn decode(buf: &mut Bytes) -> Result<DnsHeader, DnsMessageError> {
+        let mut buf = buf.copy_to_bytes(DNS_HEADER_LEN);
 
         let id = buf.get_u16();
 
@@ -255,8 +249,6 @@ impl DnsHeaderDecoder {
         let query_indicator = third_byte & 0b0000_0001 > 0;
 
         let operation_code_mask = (third_byte & 0b0111_1000) >> 3;
-
-        println!("operation_code_mask = {:#010b}", operation_code_mask);
         let operation_code = DnsOperationCode::try_from(operation_code_mask)?;
 
         let auth_answer = third_byte & 0b0000_0100 > 0;
