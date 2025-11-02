@@ -3,12 +3,9 @@ mod message;
 use std::net::UdpSocket;
 
 use crate::message::{
-    answer::DnsAnswer,
     constants::DNS_MESSAGE_PACKET_SIZE,
     header::{DnsHeader, DnsOperationCode, DnsResponseCode},
     message::{DnsMessage, DnsMessageDecoder, DnsMessageEncoder},
-    question::{DnsQuestion, DnsQuestionClass, DnsQuestionType},
-    types::{DnsClass, DnsType},
 };
 
 fn main() {
@@ -38,24 +35,13 @@ fn main() {
                         } else {
                             DnsResponseCode::NotImplemented
                         },
-                        question_count: 1,
-                        answer_record_count: 1,
+                        question_count: request.questions.len() as u16,
+                        answer_record_count: request.answers.len() as u16,
                         auth_record_count: 0,
                         additional_record_count: 0,
                     },
-                    question: DnsQuestion {
-                        name: request.question.name.clone(),
-                        kind: DnsQuestionType::DnsType(DnsType::A),
-                        class: DnsQuestionClass::DnsClass(DnsClass::IN),
-                    },
-                    answer: DnsAnswer {
-                        name: request.question.name.clone(),
-                        kind: DnsType::A,
-                        class: DnsClass::IN,
-                        ttl: 60,
-                        length: 4,
-                        data: "8.8.8.8".to_string(),
-                    },
+                    questions: request.questions,
+                    answers: request.answers,
                 };
 
                 let response = DnsMessageEncoder::encode(&response_message);

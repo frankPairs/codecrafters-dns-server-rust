@@ -1,13 +1,13 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::message::question::DnsQuestionDecoder;
+use crate::message::question::DnsQuestionsDecoder;
 
 use super::{
-    answer::{DnsAnswer, DnsAnswerEncoder},
+    answer::{DnsAnswer, DnsAnswersEncoder},
     constants::DNS_MESSAGE_PACKET_SIZE,
     error::DnsMessageError,
     header::{DnsHeader, DnsHeaderDecoder, DnsHeaderEncoder},
-    question::{DnsQuestion, DnsQuestionClass, DnsQuestionEncoder, DnsQuestionType},
+    question::{DnsQuestion, DnsQuestionsEncoder},
     types::{DnsClass, DnsType},
 };
 
@@ -15,8 +15,8 @@ use super::{
 #[derive(Debug)]
 pub struct DnsMessage {
     pub header: DnsHeader,
-    pub question: DnsQuestion,
-    pub answer: DnsAnswer,
+    pub questions: Vec<DnsQuestion>,
+    pub answers: Vec<DnsAnswer>,
 }
 
 pub struct DnsMessageEncoder;
@@ -28,11 +28,13 @@ impl DnsMessageEncoder {
         let header = DnsHeaderEncoder::encode(&message.header);
         buf.put(header);
 
-        let question = DnsQuestionEncoder::encode(&message.question);
-        buf.put(question);
+        let questions_encoder = DnsQuestionsEncoder;
+        let questions = questions_encoder.encode(&message.questions);
+        buf.put(questions);
 
-        let answer = DnsAnswerEncoder::encode(&message.answer);
-        buf.put(answer);
+        let answers_encoder = DnsAnswersEncoder;
+        let answers = answers_encoder.encode(&message.answers);
+        buf.put(answers);
 
         Bytes::from(buf)
     }
@@ -45,23 +47,26 @@ impl DnsMessageDecoder {
         let mut buf = Bytes::copy_from_slice(buf);
 
         let header = DnsHeaderDecoder::decode(&mut buf)?;
-        let question = DnsQuestionDecoder::decode(&mut buf)?;
 
-        Ok(DnsMessage {
-            header,
-            question: DnsQuestion {
-                name: question.name.clone(),
-                kind: DnsQuestionType::DnsType(DnsType::A),
-                class: DnsQuestionClass::DnsClass(DnsClass::IN),
-            },
-            answer: DnsAnswer {
-                name: question.name.clone(),
+        let questions_decoder = DnsQuestionsDecoder::new(&mut buf, header.question_count);
+        let questions = questions_decoder.decode()?;
+
+        let answers: Vec<DnsAnswer> = questions
+            .iter()
+            .map(|question| DnsAnswer {
+                name: question.name.to_string(),
                 kind: DnsType::A,
                 class: DnsClass::IN,
                 ttl: 60,
                 length: 4,
                 data: "8.8.8.8".to_string(),
-            },
+            })
+            .collect();
+
+        Ok(DnsMessage {
+            header,
+            questions,
+            answers,
         })
     }
 }

@@ -92,7 +92,7 @@ impl TryFrom<u8> for DnsOperationCode {
             1 => Ok(DnsOperationCode::InverseQuery),
             2 => Ok(DnsOperationCode::ServerStatusRequest),
             3..=15 => Ok(DnsOperationCode::Reserve(value)),
-            num => Err(DnsMessageError::InvalidOperationCode(format!(
+            num => Err(DnsMessageError::DecodeHeader(format!(
                 "{} is not a valid operation code",
                 num
             ))),
@@ -166,7 +166,7 @@ impl TryFrom<u8> for DnsResponseCode {
             4 => Ok(DnsResponseCode::NotImplemented),
             5 => Ok(DnsResponseCode::Refused),
             6..=15 => Ok(DnsResponseCode::Reserved(value)),
-            num => Err(DnsMessageError::InvalidResponseCode(format!(
+            num => Err(DnsMessageError::DecodeHeader(format!(
                 "{} is not a valid response code",
                 num
             ))),

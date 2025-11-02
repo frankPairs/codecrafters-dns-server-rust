@@ -17,10 +17,20 @@ pub struct DnsAnswer {
     pub data: String,
 }
 
-pub struct DnsAnswerEncoder;
+pub struct DnsAnswersEncoder;
 
-impl DnsAnswerEncoder {
-    pub fn encode(answer: &DnsAnswer) -> Bytes {
+impl DnsAnswersEncoder {
+    pub fn encode(&self, answers: &Vec<DnsAnswer>) -> Bytes {
+        let mut buf = BytesMut::new();
+
+        for answer in answers {
+            buf.put(self.encode_answer(answer));
+        }
+
+        Bytes::from(buf)
+    }
+
+    fn encode_answer(&self, answer: &DnsAnswer) -> Bytes {
         let mut buf = BytesMut::new();
         let mut encoded_name = BytesMut::new();
         let answer_name_parts = answer.name.split(".");
