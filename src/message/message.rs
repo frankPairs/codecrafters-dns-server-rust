@@ -1,69 +1,74 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::message::question::DnsQuestionsDecoder;
+use crate::message::{answer::AnswersDecoder, question::QuestionsDecoder};
 
 use super::{
-    answer::{DnsAnswer, DnsAnswersEncoder},
+    answer::{Answer, AnswersEncoder},
     constants::DNS_MESSAGE_PACKET_SIZE,
-    error::DnsMessageError,
-    header::{DnsHeader, DnsHeaderDecoder, DnsHeaderEncoder},
-    question::{DnsQuestion, DnsQuestionsEncoder},
-    types::{DnsClass, DnsType},
+    error::ServerError,
+    header::{Header, HeaderDecoder, HeaderEncoder},
+    question::{Question, QuestionsEncoder},
 };
 
 /// All communications in the DNS protocol are carried in a single format called a "message". Each message consists of 5 sections: header, question, answer, authority, and an additional space.
 #[derive(Debug)]
-pub struct DnsMessage {
-    pub header: DnsHeader,
-    pub questions: Vec<DnsQuestion>,
-    pub answers: Vec<DnsAnswer>,
+pub struct Message {
+    pub header: Header,
+    pub questions: Vec<Question>,
+    pub answers: Vec<Answer>,
 }
 
-pub struct DnsMessageEncoder;
+pub struct MessageEncoder;
 
-impl DnsMessageEncoder {
-    pub fn encode(message: &DnsMessage) -> Bytes {
+impl MessageEncoder {
+    pub fn encode(message: &Message) -> Bytes {
         let mut buf = BytesMut::with_capacity(DNS_MESSAGE_PACKET_SIZE);
 
-        let header = DnsHeaderEncoder::encode(&message.header);
+        let header = HeaderEncoder::encode(&message.header);
         buf.put(header);
 
-        let questions_encoder = DnsQuestionsEncoder;
-        let questions = questions_encoder.encode(&message.questions);
-        buf.put(questions);
+        if !&message.questions.is_empty() {
+            let questions_encoder = QuestionsEncoder;
+            let questions = questions_encoder.encode(&message.questions);
 
-        let answers_encoder = DnsAnswersEncoder;
-        let answers = answers_encoder.encode(&message.answers);
-        buf.put(answers);
+            buf.put(questions);
+        }
+
+        if !&message.answers.is_empty() {
+            let answers_encoder = AnswersEncoder;
+            let answers = answers_encoder.encode(&message.answers);
+
+            buf.put(answers);
+        }
 
         Bytes::from(buf)
     }
 }
 
-pub struct DnsMessageDecoder;
+pub struct MessageDecoder;
 
-impl DnsMessageDecoder {
-    pub fn decode(buf: &[u8; DNS_MESSAGE_PACKET_SIZE]) -> Result<DnsMessage, DnsMessageError> {
+impl MessageDecoder {
+    pub fn decode(buf: &[u8; DNS_MESSAGE_PACKET_SIZE]) -> Result<Message, ServerError> {
         let mut buf = Bytes::copy_from_slice(buf);
 
-        let header = DnsHeaderDecoder::decode(&mut buf)?;
+        let header = HeaderDecoder::decode(&mut buf)?;
+        let mut questions = Vec::with_capacity(header.question_count as usize);
+        let mut answers = Vec::with_capacity(header.answer_record_count as usize);
 
-        let questions_decoder = DnsQuestionsDecoder::new(&mut buf, header.question_count);
-        let questions = questions_decoder.decode()?;
+        if header.question_count > 0 {
+            let questions_decoder = QuestionsDecoder::new(&mut buf, header.question_count);
+            let decoded_questions = questions_decoder.decode()?;
 
-        let answers: Vec<DnsAnswer> = questions
-            .iter()
-            .map(|question| DnsAnswer {
-                name: question.name.to_string(),
-                kind: DnsType::A,
-                class: DnsClass::IN,
-                ttl: 60,
-                length: 4,
-                data: "8.8.8.8".to_string(),
-            })
-            .collect();
+            questions = decoded_questions;
+        }
 
-        Ok(DnsMessage {
+        if header.answer_record_count > 0 {
+            let answers_decoder = AnswersDecoder::new(&mut buf, header.answer_record_count);
+            let decoded_answers = answers_decoder.decode()?;
+
+            answers = decoded_answers;
+        }
+        Ok(Message {
             header,
             questions,
             answers,

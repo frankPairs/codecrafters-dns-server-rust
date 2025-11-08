@@ -1,68 +1,36 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
 
-use crate::message::{constants::DNS_MESSAGE_PACKET_SIZE, error::DnsMessageError, types::DnsClass};
+use crate::message::{constants::DNS_MESSAGE_PACKET_SIZE, error::ServerError, types::DnsClass};
 
-use super::types::DnsType;
-
-#[derive(Debug, Clone)]
-pub struct DomainLabel {
-    pub name: String,
-    pub pointer: usize,
-}
-
-impl std::borrow::Borrow<str> for DomainLabel {
-    fn borrow(&self) -> &str {
-        self.name.as_str()
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct DomainName {
-    labels: Vec<DomainLabel>,
-}
-
-impl DomainName {
-    pub fn add_label(&mut self, new_label: DomainLabel) {
-        self.labels.push(new_label);
-    }
-
-    pub fn as_slice(&self, start_pointer: &DomainLabelPointer) -> &[DomainLabel] {
-        &self.labels[start_pointer.index_position..]
-    }
-}
-
-impl std::fmt::Display for DomainName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = self.labels.join(".");
-
-        write!(f, "{}", name)
-    }
-}
+use super::types::{DnsType, DomainLabel, DomainName};
 
 #[derive(Debug)]
-pub struct DomainLabelPointer {
+pub struct QuestionDomainLabelPointer {
     pub domain_name: String,
     pub index_position: usize,
 }
 
 #[derive(Debug, Default)]
-pub struct DomainNames {
+pub struct QuestionDomainNames {
     names: HashMap<String, DomainName>,
-    label_pointers: HashMap<usize, DomainLabelPointer>,
+    label_pointers: HashMap<usize, QuestionDomainLabelPointer>,
 }
 
-impl DomainNames {
+impl QuestionDomainNames {
     pub fn add_name(&mut self, domain_name: DomainName) {
         let name = domain_name.to_string();
+        let labels = domain_name.get_labels();
 
-        for (index, label) in domain_name.labels.iter().enumerate() {
-            let label_pointer = DomainLabelPointer {
+        for (index, label) in labels.iter().enumerate() {
+            let label_pointer = QuestionDomainLabelPointer {
                 domain_name: name.clone(),
                 index_position: index,
             };
 
-            self.label_pointers.insert(label.pointer, label_pointer);
+            if let Some(pointer) = label.pointer {
+                self.label_pointers.insert(pointer, label_pointer);
+            }
         }
 
         self.names.insert(name, domain_name);
@@ -72,22 +40,23 @@ impl DomainNames {
         let label_pointer = self.label_pointers.get(&pointer)?;
         let domain_name = self.names.get(&label_pointer.domain_name)?;
 
-        Some(domain_name.as_slice(label_pointer))
+        Some(domain_name.as_slice(label_pointer.index_position))
     }
 }
+
 /// The question section contains a list of questions (usually just 1) that the sender wants to ask the receiver. This section is present in both query and reply packets.
-#[derive(Debug)]
-pub struct DnsQuestion {
+#[derive(Debug, Clone)]
+pub struct Question {
     /// A domain name, represented as a sequence of "labels" (more on this below)
     pub name: String,
-    pub kind: DnsQuestionType,
-    pub class: DnsQuestionClass,
+    pub kind: QuestionType,
+    pub class: QuestionClass,
 }
 
 /// QTYPE fields appear in the question part of a query.  QTYPES are a
 /// superset of TYPEs, hence all TYPEs are valid QTYPEs.
 #[derive(Debug, Clone, Copy)]
-pub enum DnsQuestionType {
+pub enum QuestionType {
     DnsType(DnsType),
     AXFR,
     /// 253 A request for mailbox-related records (MB, MG or MR)
@@ -98,31 +67,31 @@ pub enum DnsQuestionType {
     ALL,
 }
 
-impl Into<u16> for DnsQuestionType {
+impl Into<u16> for QuestionType {
     fn into(self) -> u16 {
         match self {
-            DnsQuestionType::DnsType(dns_type) => dns_type.into(),
-            DnsQuestionType::AXFR => 252,
-            DnsQuestionType::MAILB => 253,
-            DnsQuestionType::MAILA => 254,
-            DnsQuestionType::ALL => 255,
+            QuestionType::DnsType(dns_type) => dns_type.into(),
+            QuestionType::AXFR => 252,
+            QuestionType::MAILB => 253,
+            QuestionType::MAILA => 254,
+            QuestionType::ALL => 255,
         }
     }
 }
 
-impl TryFrom<u16> for DnsQuestionType {
-    type Error = DnsMessageError;
+impl TryFrom<u16> for QuestionType {
+    type Error = ServerError;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            252 => Ok(DnsQuestionType::AXFR),
-            253 => Ok(DnsQuestionType::MAILB),
-            254 => Ok(DnsQuestionType::MAILA),
-            255 => Ok(DnsQuestionType::ALL),
+            252 => Ok(QuestionType::AXFR),
+            253 => Ok(QuestionType::MAILB),
+            254 => Ok(QuestionType::MAILA),
+            255 => Ok(QuestionType::ALL),
             num => {
                 let dns_type = DnsType::try_from(num)?;
 
-                Ok(DnsQuestionType::DnsType(dns_type))
+                Ok(QuestionType::DnsType(dns_type))
             }
         }
     }
@@ -132,40 +101,40 @@ impl TryFrom<u16> for DnsQuestionType {
 /// are a superset of CLASS values; every CLASS is a valid QCLASS.  In
 /// addition to CLASS values, the following QCLASSes are defined:
 #[derive(Debug, Clone, Copy)]
-pub enum DnsQuestionClass {
+pub enum QuestionClass {
     DnsClass(DnsClass),
     ALL,
 }
 
-impl Into<u16> for DnsQuestionClass {
+impl Into<u16> for QuestionClass {
     fn into(self) -> u16 {
         match self {
-            DnsQuestionClass::DnsClass(dns_class) => dns_class.into(),
-            DnsQuestionClass::ALL => 255,
+            QuestionClass::DnsClass(dns_class) => dns_class.into(),
+            QuestionClass::ALL => 255,
         }
     }
 }
 
-impl TryFrom<u16> for DnsQuestionClass {
-    type Error = DnsMessageError;
+impl TryFrom<u16> for QuestionClass {
+    type Error = ServerError;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
-            255 => Ok(DnsQuestionClass::ALL),
+            255 => Ok(QuestionClass::ALL),
             num => {
                 let dns_class = DnsClass::try_from(num)?;
 
-                Ok(DnsQuestionClass::DnsClass(dns_class))
+                Ok(QuestionClass::DnsClass(dns_class))
             }
         }
     }
 }
 
 #[derive(Debug)]
-pub struct DnsQuestionsEncoder;
+pub struct QuestionsEncoder;
 
-impl DnsQuestionsEncoder {
-    pub fn encode(&self, questions: &Vec<DnsQuestion>) -> Bytes {
+impl QuestionsEncoder {
+    pub fn encode(&self, questions: &Vec<Question>) -> Bytes {
         let mut buf = BytesMut::new();
 
         for question in questions {
@@ -175,7 +144,7 @@ impl DnsQuestionsEncoder {
         Bytes::from(buf)
     }
 
-    fn encode_question(&self, question: &DnsQuestion) -> Bytes {
+    fn encode_question(&self, question: &Question) -> Bytes {
         let mut buf = BytesMut::new();
         let mut encoded_name = BytesMut::new();
         let question_parts = question.name.split(".");
@@ -204,25 +173,25 @@ impl DnsQuestionsEncoder {
 /// the following link:
 ///
 /// https://www.rfc-editor.org/rfc/rfc1035#section-4.1.4
-pub struct DnsQuestionsDecoder<'a> {
+pub struct QuestionsDecoder<'a> {
     buf: &'a mut Bytes,
-    question_count: u16,
-    domain_names: DomainNames,
+    questions_count: u16,
+    domain_names: QuestionDomainNames,
 }
 
-impl<'a> DnsQuestionsDecoder<'a> {
-    pub fn new(buf: &'a mut Bytes, question_count: u16) -> Self {
+impl<'a> QuestionsDecoder<'a> {
+    pub fn new(buf: &'a mut Bytes, questions_count: u16) -> Self {
         Self {
             buf,
-            question_count,
-            domain_names: DomainNames::default(),
+            questions_count,
+            domain_names: QuestionDomainNames::default(),
         }
     }
 
-    pub fn decode(mut self) -> Result<Vec<DnsQuestion>, DnsMessageError> {
-        let mut questions: Vec<DnsQuestion> = Vec::with_capacity(self.question_count as usize);
+    pub fn decode(mut self) -> Result<Vec<Question>, ServerError> {
+        let mut questions: Vec<Question> = Vec::with_capacity(self.questions_count as usize);
 
-        for _ in 0..self.question_count {
+        for _ in 0..self.questions_count {
             let question = self.decode_question()?;
 
             questions.push(question);
@@ -231,7 +200,7 @@ impl<'a> DnsQuestionsDecoder<'a> {
         Ok(questions)
     }
 
-    fn decode_question(&mut self) -> Result<DnsQuestion, DnsMessageError> {
+    fn decode_question(&mut self) -> Result<Question, ServerError> {
         let mut domain_name = DomainName::default();
 
         loop {
@@ -261,9 +230,9 @@ impl<'a> DnsQuestionsDecoder<'a> {
             let pointer_position = self.get_cursor_position();
             let bytes = self.buf.copy_to_bytes(label_length as usize);
             let label = std::str::from_utf8(&bytes[..])
-                .map_err(|err| DnsMessageError::DecodeQuestion(err.to_string()))?;
+                .map_err(|err| ServerError::DecodeQuestion(err.to_string()))?;
             let domain_label = DomainLabel {
-                pointer: pointer_position,
+                pointer: Some(pointer_position),
                 name: label.to_string(),
             };
 
@@ -271,12 +240,12 @@ impl<'a> DnsQuestionsDecoder<'a> {
         }
 
         let name = domain_name.to_string();
-        let kind = DnsQuestionType::try_from(self.buf.get_u16())?;
-        let class = DnsQuestionClass::try_from(self.buf.get_u16())?;
+        let kind = QuestionType::try_from(self.buf.get_u16())?;
+        let class = QuestionClass::try_from(self.buf.get_u16())?;
 
         self.domain_names.add_name(domain_name);
 
-        Ok(DnsQuestion { name, kind, class })
+        Ok(Question { name, kind, class })
     }
 
     // When the first two bits are ones, we know that it is a pointer.

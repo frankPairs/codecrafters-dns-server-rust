@@ -2,7 +2,7 @@ use std::u16;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::message::error::DnsMessageError;
+use crate::message::error::ServerError;
 
 use super::constants::DNS_MESSAGE_PACKET_SIZE;
 
@@ -12,7 +12,7 @@ const DNS_HEADER_LEN: usize = 12;
 /// The header contains information about the query/response.
 /// It is 12 bytes long, and integers are encoded in big-endian format.
 #[derive(Debug)]
-pub struct DnsHeader {
+pub struct Header {
     /// A random ID assigned to query packets. Response packets must reply with the same ID.
     pub id: u16,
 
@@ -20,7 +20,7 @@ pub struct DnsHeader {
     pub query_indicator: bool,
 
     /// Specifies the kind of query in a message.
-    pub operation_code: DnsOperationCode,
+    pub operation_code: OperationCode,
 
     /// 1 if the responding server "owns" the domain queried, i.e., it's authoritative.
     pub auth_answer: bool,
@@ -38,7 +38,7 @@ pub struct DnsHeader {
     pub reserve: u8,
 
     /// Response code indicating the status of the response.
-    pub code: DnsResponseCode,
+    pub code: ResponseCode,
 
     /// Number of questions in the Question section.
     pub question_count: u16,
@@ -65,34 +65,34 @@ pub struct DnsHeader {
 //
 // 3-15            reserved for future use
 #[derive(Debug, Clone, Copy)]
-pub enum DnsOperationCode {
+pub enum OperationCode {
     StandardQuery,
     InverseQuery,
     ServerStatusRequest,
     Reserve(u8),
 }
 
-impl Into<u8> for DnsOperationCode {
+impl Into<u8> for OperationCode {
     fn into(self) -> u8 {
         match self {
-            DnsOperationCode::StandardQuery => 0,
-            DnsOperationCode::InverseQuery => 1,
-            DnsOperationCode::ServerStatusRequest => 2,
-            DnsOperationCode::Reserve(num) => num,
+            OperationCode::StandardQuery => 0,
+            OperationCode::InverseQuery => 1,
+            OperationCode::ServerStatusRequest => 2,
+            OperationCode::Reserve(num) => num,
         }
     }
 }
 
-impl TryFrom<u8> for DnsOperationCode {
-    type Error = DnsMessageError;
+impl TryFrom<u8> for OperationCode {
+    type Error = ServerError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(DnsOperationCode::StandardQuery),
-            1 => Ok(DnsOperationCode::InverseQuery),
-            2 => Ok(DnsOperationCode::ServerStatusRequest),
-            3..=15 => Ok(DnsOperationCode::Reserve(value)),
-            num => Err(DnsMessageError::DecodeHeader(format!(
+            0 => Ok(OperationCode::StandardQuery),
+            1 => Ok(OperationCode::InverseQuery),
+            2 => Ok(OperationCode::ServerStatusRequest),
+            3..=15 => Ok(OperationCode::Reserve(value)),
+            num => Err(ServerError::DecodeHeader(format!(
                 "{} is not a valid operation code",
                 num
             ))),
@@ -130,7 +130,7 @@ impl TryFrom<u8> for DnsOperationCode {
 //
 //                 6-15            Reserved for future use.
 #[derive(Debug, Clone, Copy)]
-pub enum DnsResponseCode {
+pub enum ResponseCode {
     NoErrorCondition,
     FormatError,
     ServerFailure,
@@ -140,43 +140,44 @@ pub enum DnsResponseCode {
     Reserved(u8),
 }
 
-impl Into<u8> for DnsResponseCode {
+impl Into<u8> for ResponseCode {
     fn into(self) -> u8 {
         match self {
-            DnsResponseCode::NoErrorCondition => 0,
-            DnsResponseCode::FormatError => 1,
-            DnsResponseCode::ServerFailure => 2,
-            DnsResponseCode::NameError => 3,
-            DnsResponseCode::NotImplemented => 4,
-            DnsResponseCode::Refused => 5,
-            DnsResponseCode::Reserved(num) => num,
+            ResponseCode::NoErrorCondition => 0,
+            ResponseCode::FormatError => 1,
+            ResponseCode::ServerFailure => 2,
+            ResponseCode::NameError => 3,
+            ResponseCode::NotImplemented => 4,
+            ResponseCode::Refused => 5,
+            ResponseCode::Reserved(num) => num,
         }
     }
 }
 
-impl TryFrom<u8> for DnsResponseCode {
-    type Error = DnsMessageError;
+impl TryFrom<u8> for ResponseCode {
+    type Error = ServerError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(DnsResponseCode::NoErrorCondition),
-            1 => Ok(DnsResponseCode::FormatError),
-            2 => Ok(DnsResponseCode::ServerFailure),
-            3 => Ok(DnsResponseCode::NameError),
-            4 => Ok(DnsResponseCode::NotImplemented),
-            5 => Ok(DnsResponseCode::Refused),
-            6..=15 => Ok(DnsResponseCode::Reserved(value)),
-            num => Err(DnsMessageError::DecodeHeader(format!(
+            0 => Ok(ResponseCode::NoErrorCondition),
+            1 => Ok(ResponseCode::FormatError),
+            2 => Ok(ResponseCode::ServerFailure),
+            3 => Ok(ResponseCode::NameError),
+            4 => Ok(ResponseCode::NotImplemented),
+            5 => Ok(ResponseCode::Refused),
+            6..=15 => Ok(ResponseCode::Reserved(value)),
+            num => Err(ServerError::DecodeHeader(format!(
                 "{} is not a valid response code",
                 num
             ))),
         }
     }
 }
-pub struct DnsHeaderEncoder;
 
-impl DnsHeaderEncoder {
-    pub fn encode(header: &DnsHeader) -> Bytes {
+pub struct HeaderEncoder;
+
+impl HeaderEncoder {
+    pub fn encode(header: &Header) -> Bytes {
         let mut buf = BytesMut::with_capacity(DNS_MESSAGE_PACKET_SIZE);
 
         buf.put_u16(header.id);
@@ -236,10 +237,10 @@ impl DnsHeaderEncoder {
     }
 }
 
-pub struct DnsHeaderDecoder;
+pub struct HeaderDecoder;
 
-impl DnsHeaderDecoder {
-    pub fn decode(buf: &mut Bytes) -> Result<DnsHeader, DnsMessageError> {
+impl HeaderDecoder {
+    pub fn decode(buf: &mut Bytes) -> Result<Header, ServerError> {
         let mut buf = buf.copy_to_bytes(DNS_HEADER_LEN);
 
         let id = buf.get_u16();
@@ -249,7 +250,7 @@ impl DnsHeaderDecoder {
         let query_indicator = third_byte & 0b0000_0001 > 0;
 
         let operation_code_mask = (third_byte & 0b0111_1000) >> 3;
-        let operation_code = DnsOperationCode::try_from(operation_code_mask)?;
+        let operation_code = OperationCode::try_from(operation_code_mask)?;
 
         let auth_answer = third_byte & 0b0000_0100 > 0;
         let truncation = third_byte & 0b0000_0010 > 0;
@@ -260,14 +261,14 @@ impl DnsHeaderDecoder {
         let recursion_available = fourth_byte & 0b1000_0000 > 0;
 
         let code_mask = fourth_byte >> 4;
-        let code = DnsResponseCode::try_from(code_mask)?;
+        let code = ResponseCode::try_from(code_mask)?;
 
         let question_count = buf.get_u16();
         let answer_record_count = buf.get_u16();
         let auth_record_count = buf.get_u16();
         let additional_record_count = buf.get_u16();
 
-        Ok(DnsHeader {
+        Ok(Header {
             id,
             query_indicator,
             operation_code,

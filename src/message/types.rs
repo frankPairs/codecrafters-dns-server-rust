@@ -1,4 +1,4 @@
-use super::error::DnsMessageError;
+use super::error::ServerError;
 
 /// TYPE fields are used in resource records
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +61,7 @@ impl Into<u16> for DnsType {
 }
 
 impl TryFrom<u16> for DnsType {
-    type Error = DnsMessageError;
+    type Error = ServerError;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
@@ -81,7 +81,7 @@ impl TryFrom<u16> for DnsType {
             14 => Ok(DnsType::MINFO),
             15 => Ok(DnsType::MX),
             16 => Ok(DnsType::TXT),
-            num => Err(DnsMessageError::InvalidDnsType(format!(
+            num => Err(ServerError::InvalidDnsType(format!(
                 "{} is not a valid DNS type",
                 num
             ))),
@@ -114,7 +114,7 @@ impl Into<u16> for DnsClass {
 }
 
 impl TryFrom<u16> for DnsClass {
-    type Error = DnsMessageError;
+    type Error = ServerError;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
@@ -122,10 +122,49 @@ impl TryFrom<u16> for DnsClass {
             2 => Ok(DnsClass::CS),
             3 => Ok(DnsClass::CH),
             4 => Ok(DnsClass::HS),
-            num => Err(DnsMessageError::InvalidDnsClass(format!(
+            num => Err(ServerError::InvalidDnsClass(format!(
                 "{} is not a valid DNS class",
                 num
             ))),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DomainLabel {
+    pub name: String,
+    pub pointer: Option<usize>,
+}
+
+impl std::borrow::Borrow<str> for DomainLabel {
+    fn borrow(&self) -> &str {
+        self.name.as_str()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DomainName {
+    labels: Vec<DomainLabel>,
+}
+
+impl DomainName {
+    pub fn get_labels(&self) -> &[DomainLabel] {
+        &self.labels
+    }
+
+    pub fn add_label(&mut self, new_label: DomainLabel) {
+        self.labels.push(new_label);
+    }
+
+    pub fn as_slice(&self, start_index: usize) -> &[DomainLabel] {
+        &self.labels[start_index..]
+    }
+}
+
+impl std::fmt::Display for DomainName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.labels.join(".");
+
+        write!(f, "{}", name)
     }
 }
