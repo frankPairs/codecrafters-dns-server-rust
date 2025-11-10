@@ -2,16 +2,14 @@ use std::net::{SocketAddr, UdpSocket};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::message::{
+use crate::{
     error::ServerError,
-    header::Header,
-    message::{Message, MessageDecoder, MessageEncoder},
-    types::{DomainLabel, DomainName},
-};
-
-use super::{
-    constants::DNS_MESSAGE_PACKET_SIZE,
-    types::{DnsClass, DnsType},
+    message::{
+        constants::DNS_MESSAGE_PACKET_SIZE,
+        header::Header,
+        message::{Message, MessageDecoder, MessageEncoder},
+        types::{DnsClass, DnsType, DomainLabel, DomainName},
+    },
 };
 
 /// The answer section contains RRs that answer the question

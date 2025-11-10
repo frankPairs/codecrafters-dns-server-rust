@@ -1,14 +1,12 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::message::{answer::AnswersDecoder, question::QuestionsDecoder};
-
 use super::{
-    answer::{Answer, AnswersEncoder},
+    answer::{Answer, AnswersDecoder, AnswersEncoder},
     constants::DNS_MESSAGE_PACKET_SIZE,
-    error::ServerError,
     header::{Header, HeaderDecoder, HeaderEncoder},
-    question::{Question, QuestionsEncoder},
+    question::{Question, QuestionsDecoder, QuestionsEncoder},
 };
+use crate::error::ServerError;
 
 /// All communications in the DNS protocol are carried in a single format called a "message". Each message consists of 5 sections: header, question, answer, authority, and an additional space.
 #[derive(Debug)]

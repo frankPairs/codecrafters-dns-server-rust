@@ -2,7 +2,7 @@ use std::u16;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::message::error::ServerError;
+use crate::error::ServerError;
 
 use super::constants::DNS_MESSAGE_PACKET_SIZE;
 

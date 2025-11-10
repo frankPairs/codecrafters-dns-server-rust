@@ -1,4 +1,4 @@
-use super::error::ServerError;
+use crate::error::ServerError;
 
 /// TYPE fields are used in resource records
 #[derive(Debug, Clone, Copy)]

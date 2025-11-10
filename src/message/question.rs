@@ -1,9 +1,11 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
 
-use crate::message::{constants::DNS_MESSAGE_PACKET_SIZE, error::ServerError, types::DnsClass};
-
-use super::types::{DnsType, DomainLabel, DomainName};
+use super::{
+    constants::DNS_MESSAGE_PACKET_SIZE,
+    types::{DnsClass, DnsType, DomainLabel, DomainName},
+};
+use crate::error::ServerError;
 
 #[derive(Debug)]
 pub struct QuestionDomainLabelPointer {
